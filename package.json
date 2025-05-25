@@ -1,0 +1,19 @@
+{
+  "name": "paypalverification",
+  "version": "1.0.0",
+  "main": "webhookListener.js",
+  "scripts": {
+  "start": "node webhookListener.js"
+},
+
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "express": "4.18.2",
+    "node-fetch": "3.3.0",
+    "dotenv": "16.0.3",
+    "buffer-crc32": "0.2.13"
+  }
+}
