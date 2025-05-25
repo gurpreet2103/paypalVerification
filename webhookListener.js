@@ -1,20 +1,13 @@
-import "dotenv/config";
 import express from "express";
 import crypto from "crypto";
 import crc32 from "buffer-crc32";
 import fs from "fs/promises";
 import fetch from "node-fetch";
 
-const {
-  LISTEN_PORT = 8888,
-  LISTEN_PATH = "/webhook",
-  CACHE_DIR = ".",
-  WEBHOOK_ID
-} = process.env;
-
-if (!WEBHOOK_ID) {
-  throw new Error("WEBHOOK_ID must be set in .env");
-}
+const LISTEN_PORT = 8888;
+const LISTEN_PATH = "/webhook";
+const CACHE_DIR = ".";
+const WEBHOOK_ID = "WH-54M31324A08453805-0TT498265C515724R"; // <-- Hardcoded webhook ID here
 
 async function downloadAndCache(url, cacheKey) {
   if (!cacheKey) {
