@@ -30,34 +30,54 @@ const app = express();
 app.post(LISTEN_PATH, express.raw({ type: "application/json" }), async (request, response) => {
   const headers = request.headers;
   const event = request.body.toString(); // raw body as string
-  const data = JSON.parse(event);
+
+  let data;
+  try {
+    data = JSON.parse(event);
+  } catch (err) {
+    console.error("Invalid JSON body");
+    return response.status(400).send("Invalid JSON");
+  }
 
   console.log(`Headers:`, headers);
   console.log(`Parsed JSON:`, JSON.stringify(data, null, 2));
 
-  const isValid = await verifySignature(event, headers);
+  try {
+    const isValid = await verifySignature(event, headers);
 
-  if (isValid) {
-    console.log("Signature valid. Processing event...");
-    // Process webhook data here
-  } else {
-    console.log("Invalid signature, rejecting event.");
+    if (isValid) {
+      console.log("Signature valid. Processing event...");
+      // TODO: Add your webhook event processing logic here
+
+      return response.status(200).send("ok");  // Success response
+    } else {
+      console.log("Invalid signature, rejecting event.");
+      return response.status(400).send("Invalid signature"); // Signature failure response
+    }
+  } catch (error) {
+    console.error("Error verifying signature:", error);
+    return response.status(500).send("Internal Server Error");
   }
-
-  response.sendStatus(200);
 });
 
 async function verifySignature(event, headers) {
   const transmissionId = headers["paypal-transmission-id"];
   const timeStamp = headers["paypal-transmission-time"];
+  const certUrl = headers["paypal-cert-url"];
+  const transmissionSig = headers["paypal-transmission-sig"];
+
+  if (!transmissionId || !timeStamp || !certUrl || !transmissionSig) {
+    throw new Error("Missing PayPal headers required for signature verification");
+  }
+
   const crc = parseInt("0x" + crc32(Buffer.from(event)).toString("hex"));
 
   const message = `${transmissionId}|${timeStamp}|${WEBHOOK_ID}|${crc}`;
   console.log(`Signed message: ${message}`);
 
-  const certPem = await downloadAndCache(headers["paypal-cert-url"]);
+  const certPem = await downloadAndCache(certUrl);
 
-  const signatureBuffer = Buffer.from(headers["paypal-transmission-sig"], "base64");
+  const signatureBuffer = Buffer.from(transmissionSig, "base64");
 
   const verifier = crypto.createVerify("SHA256");
   verifier.update(message);
