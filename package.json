@@ -1,11 +1,11 @@
 {
   "name": "paypalverification",
   "version": "1.0.0",
+  "type": "module",
   "main": "webhookListener.js",
   "scripts": {
-  "start": "node webhookListener.js"
-},
-
+    "start": "node webhookListener.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
