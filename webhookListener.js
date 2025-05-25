@@ -5,7 +5,16 @@ import crc32 from "buffer-crc32";
 import fs from "fs/promises";
 import fetch from "node-fetch";
 
-const { LISTEN_PORT = 8888, LISTEN_PATH = "/webhook", CACHE_DIR = ".", WEBHOOK_ID } = process.env;
+const {
+  LISTEN_PORT = 8888,
+  LISTEN_PATH = "/webhook",
+  CACHE_DIR = ".",
+  WEBHOOK_ID
+} = process.env;
+
+if (!WEBHOOK_ID) {
+  throw new Error("WEBHOOK_ID must be set in .env");
+}
 
 async function downloadAndCache(url, cacheKey) {
   if (!cacheKey) {
@@ -19,40 +28,52 @@ async function downloadAndCache(url, cacheKey) {
 
   // Download cert
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch certificate: ${response.statusText}`);
+  }
   const data = await response.text();
   await fs.writeFile(filePath, data);
-
   return data;
 }
 
 const app = express();
 
-app.post(LISTEN_PATH, express.raw({ type: "application/json" }), async (request, response) => {
-  const headers = request.headers;
-  const event = request.body.toString(); // raw body as string
+// Accept raw body (for signature verification)
+app.use(LISTEN_PATH, express.raw({ type: "*/*" }));
 
-  let data;
+app.post(LISTEN_PATH, async (request, response) => {
+  const headers = request.headers;
+  const contentType = headers["content-type"];
+  const isJSON = contentType && contentType.includes("application/json");
+
+  if (!isJSON) {
+    return response.status(415).send("Unsupported Media Type");
+  }
+
+  const rawBody = request.body.toString("utf-8");
+
+  let parsed;
   try {
-    data = JSON.parse(event);
+    parsed = JSON.parse(rawBody);
   } catch (err) {
     console.error("Invalid JSON body");
     return response.status(400).send("Invalid JSON");
   }
 
   console.log(`Headers:`, headers);
-  console.log(`Parsed JSON:`, JSON.stringify(data, null, 2));
+  console.log(`Parsed JSON:`, JSON.stringify(parsed, null, 2));
 
   try {
-    const isValid = await verifySignature(event, headers);
+    const isValid = await verifySignature(rawBody, headers);
 
     if (isValid) {
-      console.log("Signature valid. Processing event...");
+      console.log("✅ Signature valid. Processing event...");
       // TODO: Add your webhook event processing logic here
 
-      return response.status(200).send("ok");  // Success response
+      return response.status(200).send("ok");
     } else {
-      console.log("Invalid signature, rejecting event.");
-      return response.status(400).send("Invalid signature"); // Signature failure response
+      console.warn("❌ Invalid signature, rejecting event.");
+      return response.status(400).send("Invalid signature");
     }
   } catch (error) {
     console.error("Error verifying signature:", error);
@@ -60,7 +81,7 @@ app.post(LISTEN_PATH, express.raw({ type: "application/json" }), async (request,
   }
 });
 
-async function verifySignature(event, headers) {
+async function verifySignature(rawBody, headers) {
   const transmissionId = headers["paypal-transmission-id"];
   const timeStamp = headers["paypal-transmission-time"];
   const certUrl = headers["paypal-cert-url"];
@@ -70,21 +91,23 @@ async function verifySignature(event, headers) {
     throw new Error("Missing PayPal headers required for signature verification");
   }
 
-  const crc = parseInt("0x" + crc32(Buffer.from(event)).toString("hex"));
-
+  const crc = crc32.unsigned(Buffer.from(rawBody));
   const message = `${transmissionId}|${timeStamp}|${WEBHOOK_ID}|${crc}`;
-  console.log(`Signed message: ${message}`);
+  console.log(`🔐 Signed message: ${message}`);
 
   const certPem = await downloadAndCache(certUrl);
+  console.log(`🔑 Using cert from: ${certUrl}`);
 
   const signatureBuffer = Buffer.from(transmissionSig, "base64");
 
   const verifier = crypto.createVerify("SHA256");
   verifier.update(message);
+  verifier.end();
 
-  return verifier.verify(certPem, signatureBuffer);
+  const isValid = verifier.verify(certPem, signatureBuffer);
+  return isValid;
 }
 
 app.listen(LISTEN_PORT, () => {
-  console.log(`Listening for PayPal webhooks on http://localhost:${LISTEN_PORT}${LISTEN_PATH}`);
+  console.log(`🚀 Listening for PayPal webhooks on http://localhost:${LISTEN_PORT}${LISTEN_PATH}`);
 });
